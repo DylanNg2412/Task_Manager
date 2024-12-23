@@ -1,38 +1,153 @@
 "use client"
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Trash2, Edit2, Save, X } from 'lucide-react';
+import { PlusCircle, Trash2, Edit2, Calendar, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
-const TaskManagementDashboard = () => {
-  const [tasks, setTasks] = useState([]);
+const isOverdue = (dueDate) => {
+  if (!dueDate) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const taskDate = new Date(dueDate);
+  return taskDate < today;
+};
+
+const TaskForm = ({ task, setTask, onSubmit, isEdit }) => {
+  const today = new Date().toISOString().split('T')[0];
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="space-y-4">
+        <Input
+          value={task.name}
+          onChange={(e) => setTask({ ...task, name: e.target.value })}
+          placeholder="Task name"
+          className="w-full"
+        />
+        <Select
+          value={task.priority}
+          onValueChange={(value) => setTask({ ...task, priority: value })}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select priority" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="low">Low Priority</SelectItem>
+            <SelectItem value="medium">Medium Priority</SelectItem>
+            <SelectItem value="high">High Priority</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input
+          type="date"
+          value={task.dueDate}
+          onChange={(e) => setTask({ ...task, dueDate: e.target.value })}
+          min={today}
+          className={task.dueDate && task.dueDate < today ? 'border-red-500' : ''}
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        {isEdit && (
+          <Button variant="outline" onClick={() => setTask(null)}>
+            Cancel
+          </Button>
+        )}
+        <Button
+          type="submit"
+          disabled={task.dueDate && task.dueDate < today}
+        >
+          {isEdit ? 'Save Changes' : 'Add Task'}
+        </Button>
+      </div>
+    </form>
+  );
+};
+
+const AddTaskDialog = ({ onSubmit }) => {
   const [newTask, setNewTask] = useState({ name: '', priority: 'medium', dueDate: '' });
-  const [editingTask, setEditingTask] = useState(null);
-
-  // Load tasks from localStorage on component mount
-  useEffect(() => {
-    const savedTasks = localStorage.getItem('tasks');
-    if (savedTasks) {
-      setTasks(JSON.parse(savedTasks));
-    }
-  }, []);
-
-  // Save tasks to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
-  }, [tasks]);
+  const [open, setOpen] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (newTask.name.trim() === '') return;
-
-    const task = {
-      id: Date.now(),
-      ...newTask,
-      completed: false
-    };
-
-    setTasks([...tasks, task]);
+    onSubmit({ ...newTask, id: Date.now(), completed: false });
     setNewTask({ name: '', priority: 'medium', dueDate: '' });
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button className="gap-2">
+          <PlusCircle className="w-4 h-4" />
+          New Task
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add New Task</DialogTitle>
+        </DialogHeader>
+        <TaskForm task={newTask} setTask={setNewTask} onSubmit={handleSubmit} isEdit={false} />
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const TaskCard = ({ task, onEdit, onDelete }) => {
+  const overdue = isOverdue(task.dueDate);
+
+  return (
+    <div className={`flex items-center justify-between bg-white rounded-lg shadow-sm border p-4 transition-all hover:shadow-md ${overdue ? 'border-red-500' : ''
+      }`}>
+      <div className="flex-1">
+        <h3 className={`font-medium ${overdue ? 'text-red-600' : ''}`}>{task.name}</h3>
+        <div className={`flex items-center gap-2 text-sm mt-1 ${overdue ? 'text-red-500' : 'text-gray-500'
+          }`}>
+          <Calendar className="w-4 h-4" />
+          {task.dueDate
+            ? new Date(task.dueDate).toLocaleDateString()
+            : 'No due date'}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onEdit(task)}
+        >
+          <Edit2 className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onDelete(task.id)}
+          className="text-red-600 hover:text-red-700"
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const TaskManagementDashboard = () => {
+  const [tasks, setTasks] = useState([]);
+  const [editingTask, setEditingTask] = useState(null);
+
+  useEffect(() => {
+    const savedTasks = localStorage.getItem('tasks');
+    if (savedTasks) setTasks(JSON.parse(savedTasks));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('tasks', JSON.stringify(tasks));
+  }, [tasks]);
+
+  const handleAddTask = (newTask) => {
+    setTasks([...tasks, newTask]);
   };
 
   const handleEdit = (task) => {
@@ -43,16 +158,10 @@ const TaskManagementDashboard = () => {
     setTasks(tasks.filter(task => task.id !== taskId));
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = (e) => {
+    e.preventDefault();
     if (editingTask.name.trim() === '') return;
-
-    setTasks(tasks.map(task => 
-      task.id === editingTask.id ? editingTask : task
-    ));
-    setEditingTask(null);
-  };
-
-  const cancelEdit = () => {
+    setTasks(tasks.map(task => task.id === editingTask.id ? editingTask : task));
     setEditingTask(null);
   };
 
@@ -62,135 +171,62 @@ const TaskManagementDashboard = () => {
     low: tasks.filter(task => task.priority === 'low')
   };
 
-  const priorityColors = {
-    high: 'bg-red-100',
-    medium: 'bg-yellow-100',
-    low: 'bg-green-100'
+  const priorityStyles = {
+    high: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' },
+    medium: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700' },
+    low: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700' }
   };
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Task Management Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex flex-wrap gap-4">
-              <input
-                type="text"
-                value={newTask.name}
-                onChange={(e) => setNewTask({ ...newTask, name: e.target.value })}
-                placeholder="Task name"
-                className="flex-1 p-2 border rounded"
-              />
-              <select
-                value={newTask.priority}
-                onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
-                className="p-2 border rounded"
-              >
-                <option value="low">Low Priority</option>
-                <option value="medium">Medium Priority</option>
-                <option value="high">High Priority</option>
-              </select>
-              <input
-                type="date"
-                value={newTask.dueDate}
-                onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
-                className="p-2 border rounded"
-              />
-              <button
-                type="submit"
-                className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-              >
-                <PlusCircle className="w-4 h-4" />
-                Add Task
-              </button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Task Dashboard</h1>
+        <AddTaskDialog onSubmit={handleAddTask} />
+      </div>
 
-      {Object.entries(priorityGroups).map(([priority, priorityTasks]) => (
-        <Card key={priority} className={priorityColors[priority]}>
-          <CardHeader>
-            <CardTitle className="capitalize">{priority} Priority Tasks</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {priorityTasks.map(task => (
-                <div key={task.id} className="bg-white p-4 rounded-lg shadow flex items-center justify-between">
-                  {editingTask?.id === task.id ? (
-                    <div className="flex-1 flex items-center gap-4">
-                      <input
-                        type="text"
-                        value={editingTask.name}
-                        onChange={(e) => setEditingTask({ ...editingTask, name: e.target.value })}
-                        className="flex-1 p-2 border rounded"
+      <div className="grid gap-6">
+        {Object.entries(priorityGroups).map(([priority, priorityTasks]) => (
+          <Card key={priority} className={`${priorityStyles[priority].bg} border ${priorityStyles[priority].border}`}>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className={`capitalize ${priorityStyles[priority].text}`}>
+                {priority} Priority
+              </CardTitle>
+              <span className="text-sm font-medium">{priorityTasks.length} tasks</span>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {priorityTasks.map(task => (
+                  editingTask?.id === task.id ? (
+                    <div key={task.id} className="bg-white rounded-lg shadow-sm border p-4">
+                      <TaskForm
+                        task={editingTask}
+                        setTask={setEditingTask}
+                        onSubmit={handleSaveEdit}
+                        isEdit={true}
                       />
-                      <select
-                        value={editingTask.priority}
-                        onChange={(e) => setEditingTask({ ...editingTask, priority: e.target.value })}
-                        className="p-2 border rounded"
-                      >
-                        <option value="low">Low Priority</option>
-                        <option value="medium">Medium Priority</option>
-                        <option value="high">High Priority</option>
-                      </select>
-                      <input
-                        type="date"
-                        value={editingTask.dueDate}
-                        onChange={(e) => setEditingTask({ ...editingTask, dueDate: e.target.value })}
-                        className="p-2 border rounded"
-                      />
-                      <button
-                        onClick={handleSaveEdit}
-                        className="p-2 text-green-600 hover:text-green-800"
-                      >
-                        <Save className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={cancelEdit}
-                        className="p-2 text-gray-600 hover:text-gray-800"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
                     </div>
                   ) : (
-                    <>
-                      <div className="flex-1">
-                        <div className="font-medium">{task.name}</div>
-                        <div className="text-sm text-gray-600">
-                          Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No date set'}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleEdit(task)}
-                          className="p-2 text-blue-600 hover:text-blue-800"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(task.id)}
-                          className="p-2 text-red-600 hover:text-red-800"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-              {priorityTasks.length === 0 && (
-                <div className="text-gray-500 text-center py-4">
-                  No {priority} priority tasks
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                    />
+                  )
+                ))}
+                {priorityTasks.length === 0 && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      No {priority} priority tasks yet
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 };
